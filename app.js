@@ -1,7 +1,10 @@
 document.addEventListener('DOMContentLoaded', async () => {
     const generateBtn = document.getElementById('generateBtn');
     const resultDiv = document.getElementById('result');
-    let periodTimes = {};
+    const universitySelect = document.getElementById('university');
+    const periodsContainer = document.getElementById('periodsContainer');
+    let universities = {};
+    let selectedUniversity = null;
 
     // 設定ファイルを読み込む
     try {
@@ -9,12 +12,56 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!response.ok) {
             throw new Error('設定ファイル(config.json)が見つかりません。');
         }
-        periodTimes = await response.json();
+        universities = await response.json();
     } catch (error) {
         resultDiv.innerHTML = `<div class="alert alert-danger">${error.message}</div>`;
         generateBtn.disabled = true;
         return;
     }
+
+    // ドロップダウンに大学を追加
+    Object.entries(universities).forEach(([key, value]) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = value.name;
+        universitySelect.appendChild(option);
+    });
+
+    // 大学選択時の処理
+    universitySelect.addEventListener('change', (e) => {
+        selectedUniversity = e.target.value;
+        periodsContainer.innerHTML = '';
+
+        if (!selectedUniversity) {
+            periodsContainer.innerHTML = '<p class="text-muted small">大学を選択してください</p>';
+            return;
+        }
+
+        const university = universities[selectedUniversity];
+        const periodsDiv = document.createElement('div');
+
+        Object.entries(university.periods).forEach(([period, times]) => {
+            const checkboxDiv = document.createElement('div');
+            checkboxDiv.className = 'form-check form-check-inline';
+
+            const checkbox = document.createElement('input');
+            checkbox.className = 'form-check-input';
+            checkbox.type = 'checkbox';
+            checkbox.id = `period${period}`;
+            checkbox.value = period;
+
+            const label = document.createElement('label');
+            label.className = 'form-check-label';
+            label.setAttribute('for', `period${period}`);
+            label.textContent = `${period}限 (${times.start}-${times.end})`;
+
+            checkboxDiv.appendChild(checkbox);
+            checkboxDiv.appendChild(label);
+            periodsDiv.appendChild(checkboxDiv);
+        });
+
+        periodsContainer.appendChild(periodsDiv);
+    });
 
     // DateオブジェクトをiCalendar形式のUTC日時に変換 (DTSTAMP用)
     const toUTCString = (date) => {
@@ -28,10 +75,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const dates = datesText.split('\n').map(d => d.trim()).filter(d => d);
 
-        if (!className || dates.length === 0 || checkedPeriods.length === 0) {
-            resultDiv.innerHTML = `<div class="alert alert-danger">授業名、日付、時限をすべて入力してください。</div>`;
+        if (!selectedUniversity || !className || dates.length === 0 || checkedPeriods.length === 0) {
+            resultDiv.innerHTML = `<div class="alert alert-danger">大学、授業名、日付、時限をすべて入力してください。</div>`;
             return;
         }
+
+        const periodTimes = universities[selectedUniversity].periods;
 
         let icsContent = [
             'BEGIN:VCALENDAR',
@@ -67,6 +116,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const startStr = formatForJST(date, times.start);
                 const endStr = formatForJST(date, times.end);
 
+                const universityName = universities[selectedUniversity].name;
+                const universityAddress = universities[selectedUniversity].address;
                 const event = [
                     'BEGIN:VEVENT',
                     `UID:${date}-${period}@gemini-cli`,
@@ -74,8 +125,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // 各予定にタイムゾーンIDを指定
                     `DTSTART;TZID=Asia/Tokyo:${startStr}`,
                     `DTEND;TZID=Asia/Tokyo:${endStr}`,
-                    `SUMMARY:${className} (${period}限)`,
-                    'LOCATION:大学',
+                    `SUMMARY:${universityName}：${className} (${period}限)`,
+                    `LOCATION:${universityAddress}`,
                     `DESCRIPTION:授業「${className}」の予定`,
                     'END:VEVENT'
                 ];
